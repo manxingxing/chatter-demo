@@ -1,0 +1,270 @@
+import { useState, useEffect, useRef, Activity } from 'react'
+import { useNavigate, useLoaderData } from 'react-router-dom'
+import io from 'socket.io-client'
+import UserList from '../components/UserList'
+import ConversationList from '../components/ConversationList'
+import ChatWindow from '../components/ChatWindow'
+import useMessages from '../hooks/useMessages'
+import { API, SOCKET_URL } from '../config'
+import '../App.css'
+
+function Chat() {
+  const navigate = useNavigate()
+  // 从 loader 获取数据
+  const loaderData = useLoaderData()
+  const { userId, username, conversations: initialConversations } = loaderData
+
+  console.log('Chat 页面加载:')
+  console.log('  - username:', username)
+  console.log('  - userId:', userId)
+
+  const [socket, setSocket] = useState(null)
+  const [activeTab, setActiveTab] = useState('conversations')  // 当前激活的标签: 'conversations' | 'contacts'
+  const [conversations, setConversations] = useState(initialConversations)  // 会话列表
+  const [activeConversationId, setActiveConversationId] = useState(null)  // 当前激活的会话
+  const [typingUsers, setTypingUsers] = useState(new Map())  // Map<username, content>
+  const [userRefreshKey, setUserRefreshKey] = useState(0)  // 递增触发 UserList 重新拉取
+  const typingTimeoutRef = useRef(null)
+
+  // 消息缓存 & 未读计数（由 useMessages hook 管理）
+  const {
+    messagesMap, setMessagesMap,
+    unreadCounts, setUnreadCounts,
+    currentMessages,
+  } = useMessages(userId, activeConversationId)
+
+  if (!username || !userId) {
+    console.error('缺少 username 或 userId,重定向到登录页')
+    navigate('/')
+    return
+  }
+
+  // 刷新会话列表
+  const refreshConversations = async () => {
+    try {
+      const response = await fetch(API.conversations(userId))
+      if (response.ok) {
+        const data = await response.json()
+        setConversations(data.conversations || [])
+      }
+    } catch (error) {
+      console.error('❌ 刷新会话列表失败:', error)
+    }
+  }
+
+  // 用 ref 实时追踪当前的会话 ID（供 socket 回调读取最新值）
+  const conversationIdRef = useRef(activeConversationId);
+  useEffect(() => {
+    conversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  // 连接 Socket.IO
+  useEffect(() => {
+    const newSocket = io(SOCKET_URL)
+    setSocket(newSocket)
+
+    newSocket.on('connect', () => {
+      console.log('已连接到服务器')
+      console.log('准备发送登录信息:', { userId, username })
+
+      if (!userId || !username) {
+        console.error('错误: userId 或 username 为空!')
+        return
+      }
+
+      // 发送登录事件,服务器会自动创建/更新用户并设置为在线
+      newSocket.emit('user_login', { userId, username })
+      console.log('已发送 user_login 事件')
+    })
+
+    // 用户正在输入（仅当前会话，附带输入内容预览）
+    newSocket.on('user_typing', (data) => {
+      if (data.conversationId !== conversationIdRef.current) return
+      setTypingUsers((prev) => new Map(prev).set(data.username, data.content || ''))
+    })
+
+    // 用户停止输入
+    newSocket.on('user_stop_typing', (data) => {
+      if (data.conversationId !== conversationIdRef.current) return
+      setTypingUsers((prev) => {
+        const next = new Map(prev)
+        next.delete(data.username)
+        return next
+      })
+    })
+
+    // 会话打开
+    newSocket.on('conversation_opened', async ({ conversation }) => {
+      console.log('✅ 会话已打开:', conversation.id)
+
+      setConversations(prev =>
+        prev.some(c => c.id === conversation.id) ? prev : [conversation, ...prev]
+      )
+
+      // 切换到会话 tab，设置活跃会话（消息由 useEffect 自动拉取）
+      setActiveTab('conversations')
+      setActiveConversationId(conversation.id)
+    })
+
+    // 收到新消息：追加到对应会话的消息列表
+    newSocket.on('chat_message', (message) => {
+      console.log('📨 收到新消息:', message)
+      const convId = message.conversationId
+      const isActive = convId === conversationIdRef.current
+
+      // 追加到 messagesMap
+      setMessagesMap(prev => ({
+        ...prev,
+        [convId]: [...(prev[convId] || []), message]
+      }))
+
+      // 非活跃会话：递增未读计数
+      if (!isActive) {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [convId]: (prev[convId] || 0) + 1
+        }))
+        try { new Notification('New Message', { body: message.content }) } catch {}
+      }
+
+      refreshConversations()
+    })
+
+    // 接收系统消息
+    newSocket.on('system_message', (data) => {
+      const convId = data.conversationId || activeConversationId
+      setMessagesMap(prev => ({
+        ...prev,
+        [convId]: [...(prev[convId] || []), {
+          id: Date.now(),
+          category: 'system',
+          ...data
+        }]
+      }))
+    })
+
+    // 用户上线/下线 → 刷新用户列表
+    newSocket.on('user_status_changed', () => {
+      setUserRefreshKey(k => k + 1)
+    })
+
+    // 断开连接
+    newSocket.on('disconnect', () => {
+      console.log('与服务器断开连接')
+    })
+
+    // 清理函数
+    return () => {
+      newSocket.disconnect()
+    }
+  }, [userId])
+
+  // 发送消息
+  const sendMessage = (message) => {
+    if (!message || !message.content || !socket || !activeConversationId) return
+
+    socket.emit('send_message', message)
+    socket.emit('stop_typing', { conversationId: activeConversationId, userId })
+  }
+
+  // 通知正在输入（附带当前输入内容，供对方预览）
+  const handleTyping = (content) => {
+    if (!socket || !activeConversationId) return
+
+    socket.emit('typing', { conversationId: activeConversationId, userId, content })
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('stop_typing', { conversationId: activeConversationId, userId })
+    }, 1000)
+  }
+
+  // 点击用户,打开或切换到该用户的会话
+  const handleUserClick = async (targetUserId, targetUsername) => {
+    if (!socket || targetUserId === userId) return
+
+    console.log(`👆 点击用户: ${targetUsername} (${targetUserId})`)
+
+    // 请求创建或获取会话
+    socket.emit('request_conversation', { targetUserId })
+  }
+
+  const activateConversation = (conversationId) => {
+    setActiveConversationId(conversationId)
+  }
+
+  // 退出聊天
+  const handleLogout = () => {
+    if (socket) {
+      socket.disconnect()
+    }
+    localStorage.removeItem('username')
+    localStorage.removeItem('userId')
+    navigate('/')
+  }
+
+  return (
+    <div className="chat-container">
+      {/* 左侧边栏 - 带标签切换 */}
+      <div className="sidebar">
+        {/* 标签切换 */}
+        <div className="sidebar-tabs">
+          <button
+            className={`tab-button ${activeTab === 'conversations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('conversations')}
+          >
+            💬 会话
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'contacts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('contacts')}
+          >
+            👥 通讯录
+          </button>
+        </div>
+
+        <div className="sidebar-content">
+          {/* 会话列表 */}
+          <Activity mode={activeTab === 'conversations' ? 'visible' : 'hidden'}>
+            <ConversationList
+              conversations={conversations}
+              activeConversationId={activeConversationId}
+              unreadCounts={unreadCounts}
+              onSelect={(conversationId) => activateConversation(conversationId)}
+            />
+          </Activity>
+
+          {/* 通讯录 - 在线用户列表 */}
+          <Activity mode={activeTab === 'contacts' ? 'visible' : 'hidden'}>
+            <UserList
+              currentUserId={userId}
+              onUserClick={handleUserClick}
+              refreshKey={userRefreshKey}
+            />
+          </Activity>
+        </div>
+
+        <div className="sidebar-footer">
+          <span className="current-username">👤 {username}</span>
+          <button onClick={handleLogout} className="logout-button">
+            退出聊天
+          </button>
+        </div>
+      </div>
+
+      <ChatWindow
+        activeConversationId={activeConversationId}
+        messages={currentMessages}
+        userId={userId}
+        typingUsers={typingUsers}
+        onSend={sendMessage}
+        onInputChange={handleTyping}
+      />
+    </div>
+  )
+}
+
+export default Chat
