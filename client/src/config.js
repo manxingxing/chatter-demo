@@ -2,9 +2,10 @@ const API_BASE = 'http://localhost:3000'
 
 export const API = {
   users:        `${API_BASE}/api/users`,
+  me:           `${API_BASE}/api/users/me`,
   login:        `${API_BASE}/api/login`,
   register:     `${API_BASE}/api/register`,
-  conversations: () => `${API_BASE}/api/conversations`,
+  conversations: `${API_BASE}/api/conversations`,
   messages:      (convId) => `${API_BASE}/api/conversations/${convId}/messages?limit=50`,
   messagesSince: (convId, msgId) => `${API_BASE}/api/conversations/${convId}/messages/since/${msgId}`,
 }

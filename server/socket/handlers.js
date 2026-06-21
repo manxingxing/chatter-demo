@@ -1,48 +1,50 @@
+const jwt = require('jsonwebtoken')
 const socketMapper = require('../models/SocketMapper')
 const conversationService = require('../service/ConversationService')
+const userService = require('../service/UserService')
 const { v4: uuidv4 } = require('uuid');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'chatter-secret-key-change-in-production'
 
 // 会话参与者缓存 —— 避免 typing 等高频事件反复查 DB
 const participantsCache = new Map()
 
 function setupSocketHandlers(io) {
-  io.on('connection', (socket) => {
-    console.log(`🔌 新连接: ${socket.id.substring(0, 8)}...`)
+  // JWT 鉴权中间件
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token
+    if (!token) {
+      return next(new Error('未登录'))
+    }
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET)
+      socket.userId = decoded.userId
+      next()
+    } catch {
+      next(new Error('token 无效'))
+    }
+  })
 
-    // 用户登录
-    socket.on('user_login', async ({ userId, username }) => {
-      console.log(`📝 收到登录请求: userId=${userId}, username=${username}`)
+  io.on('connection', async (socket) => {
+    console.log(`🔌 新连接: ${socket.id.substring(0, 8)}... userId=${socket.userId}`)
 
-      // 验证参数
-      if (!userId || !username) {
-        console.error('❌ 登录失败: userId 或 username 为空')
-        socket.emit('error', { message: 'userId 和 username 不能为空' })
-        return
-      }
+    // 自动绑定用户
+    const user = await userService.getUser(socket.userId)
+    if (!user) {
+      console.error('❌ 用户不存在:', socket.userId)
+      socket.disconnect()
+      return
+    }
 
-      // 绑定 Socket 和用户(自动创建/更新User实例并设置在线)
-      await socketMapper.bind(socket.id, userId, username)
+    await socketMapper.bind(socket.id, user.id, user.username)
+    socket.join(`user_${user.id}`)
+    console.log(`👤 ${user.username} 已上线`)
 
-      const user = await socketMapper.getUserBySocket(socket.id)
-
-      if (!user) {
-        console.error('❌ 绑定失败: 无法获取用户信息')
-        socket.emit('error', { message: '用户绑定失败' })
-        return
-      }
-
-      console.log(`👤 ${user.username} 已登录`)
-
-      // 每个用户加入自己的个人房间，用于接收消息
-      socket.join(`user_${userId}`)
-      console.log(`🏠 用户 ${user.username} 加入个人房间: user_${userId}`)
-
-      // 通知其他用户上线
-      socket.broadcast.emit('user_status_changed', {
-        userId: user.id,
-        username: user.username,
-        status: 'online'
-      })
+    // 通知其他用户上线
+    socket.broadcast.emit('user_status_changed', {
+      userId: user.id,
+      username: user.username,
+      status: 'online'
     })
 
     // 断开连接

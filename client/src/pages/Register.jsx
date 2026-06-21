@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { API } from '../config'
+import { useToast } from '../contexts/ToastContext'
 import '../App.css'
 
 function Register() {
@@ -8,27 +9,24 @@ function Register() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const navigate = useNavigate()
+  const toast = useToast()
 
   const handleRegister = async (e) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
 
     if (!username.trim()) {
-      setError('请输入用户名')
+      toast.error('请输入用户名')
       return
     }
 
     if (password.length < 6) {
-      setError('密码至少需要6个字符')
+      toast.error('密码至少需要6个字符')
       return
     }
 
     if (password !== confirmPassword) {
-      setError('两次输入的密码不一致')
+      toast.error('两次输入的密码不一致')
       return
     }
 
@@ -49,7 +47,7 @@ function Register() {
         throw new Error(data.message || '注册失败')
       }
 
-      setSuccess('注册成功！即将跳转到登录页...')
+      toast.success('注册成功！即将跳转到登录页...')
 
       // 1.5 秒后跳转到登录页
       setTimeout(() => {
@@ -57,7 +55,7 @@ function Register() {
       }, 1500)
     } catch (err) {
       console.error('❌ 注册错误:', err)
-      setError(err.message || '注册失败，请重试')
+      toast.error(err.message || '注册失败，请重试')
     } finally {
       setLoading(false)
     }
@@ -68,8 +66,6 @@ function Register() {
       <div className="login-box">
         <h1>💬 Chatter</h1>
         <p>创建新账号</p>
-        {error && <div className="error-message">{error}</div>}
-        {success && <div className="success-message">{success}</div>}
         <form onSubmit={handleRegister}>
           <input
             type="text"

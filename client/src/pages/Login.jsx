@@ -1,21 +1,21 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { API } from '../config'
+import { useToast } from '../contexts/ToastContext'
 import '../App.css'
 
 function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const navigate = useNavigate()
+  const toast = useToast()
 
   const handleLogin = async (e) => {
     e.preventDefault()
     if (!username.trim() || !password) return
 
     setLoading(true)
-    setError('')
 
     try {
       // 调用后端登录 API
@@ -44,10 +44,10 @@ function Login() {
       console.log('✅ 登录成功:', user)
 
       // 跳转到聊天页面
-      navigate('/chat')
+      navigate('/app')
     } catch (err) {
       console.error('❌ 登录错误:', err)
-      setError(err.message || '登录失败，请重试')
+      toast.error(err.message || '登录失败，请重试')
     } finally {
       setLoading(false)
     }
@@ -58,7 +58,6 @@ function Login() {
       <div className="login-box">
         <h1>💬 Chatter</h1>
         <p>欢迎使用实时聊天应用</p>
-        {error && <div className="error-message">{error}</div>}
         <form onSubmit={handleLogin}>
           <input
             type="text"

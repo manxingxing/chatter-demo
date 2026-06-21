@@ -1,18 +1,21 @@
 import { useState, useEffect, useRef, Activity } from 'react'
-import { useNavigate, useLoaderData } from 'react-router-dom'
+import { useLoaderData } from 'react-router-dom'
 import io from 'socket.io-client'
 import UserList from '../components/UserList'
 import ConversationList from '../components/ConversationList'
 import ChatWindow from '../components/ChatWindow'
+import { useUser } from '../contexts/UserContext'
+import { useToast } from '../contexts/ToastContext'
 import useMessages from '../hooks/useMessages'
 import { API, SOCKET_URL, authHeaders } from '../config'
 import '../App.css'
 
 function Chat() {
-  const navigate = useNavigate()
-  // 从 loader 获取数据
-  const loaderData = useLoaderData()
-  const { userId, username, conversations: initialConversations } = loaderData
+  // 从 UserContext 获取用户信息
+  const { userId, username } = useUser()
+  const toast = useToast()
+  // 从本路由 chatLoader 获取会话列表
+  const { conversations: initialConversations, users: initialUsers } = useLoaderData()
 
   console.log('Chat 页面加载:')
   console.log('  - username:', username)
@@ -20,11 +23,15 @@ function Chat() {
 
   const [socket, setSocket] = useState(null)
   const [activeTab, setActiveTab] = useState('conversations')  // 当前激活的标签: 'conversations' | 'contacts'
+
   const [conversations, setConversations] = useState(initialConversations)  // 会话列表
   const [activeConversationId, setActiveConversationId] = useState(null)  // 当前激活的会话
+
   const [typingUsers, setTypingUsers] = useState(new Map())  // Map<username, content>
-  const [userRefreshKey, setUserRefreshKey] = useState(0)  // 递增触发 UserList 重新拉取
   const typingTimeoutRef = useRef(null)
+
+  const [users, setUsers] = useState(initialUsers)
+  const [userRefreshKey, setUserRefreshKey] = useState(0)  // 递增触发 UserList 重新拉取
 
   // 消息缓存 & 未读计数（由 useMessages hook 管理）
   const {
@@ -33,16 +40,10 @@ function Chat() {
     currentMessages,
   } = useMessages(userId, activeConversationId)
 
-  if (!username || !userId) {
-    console.error('缺少 username 或 userId,重定向到登录页')
-    navigate('/')
-    return
-  }
-
   // 刷新会话列表
   const refreshConversations = async () => {
     try {
-      const response = await fetch(API.conversations(userId), { headers: authHeaders() })
+      const response = await fetch(API.conversations(), { headers: authHeaders() })
       if (response.ok) {
         const data = await response.json()
         setConversations(data.conversations || [])
@@ -60,21 +61,17 @@ function Chat() {
 
   // 连接 Socket.IO
   useEffect(() => {
-    const newSocket = io(SOCKET_URL)
+    const token = localStorage.getItem('token')
+    const newSocket = io(SOCKET_URL, { auth: { token } })
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
-      console.log('已连接到服务器')
-      console.log('准备发送登录信息:', { userId, username })
+      console.log('✅ 已连接到服务器（已通过 JWT 鉴权）')
+    })
 
-      if (!userId || !username) {
-        console.error('错误: userId 或 username 为空!')
-        return
-      }
-
-      // 发送登录事件,服务器会自动创建/更新用户并设置为在线
-      newSocket.emit('user_login', { userId, username })
-      console.log('已发送 user_login 事件')
+    newSocket.on('connect_error', (err) => {
+      console.error('Socket 鉴权失败:', err.message)
+      toast.error('WebSocket 连接失败')
     })
 
     // 用户正在输入（仅当前会话，附带输入内容预览）
@@ -196,16 +193,6 @@ function Chat() {
     setActiveConversationId(conversationId)
   }
 
-  // 退出聊天
-  const handleLogout = () => {
-    if (socket) {
-      socket.disconnect()
-    }
-    localStorage.removeItem('username')
-    localStorage.removeItem('userId')
-    navigate('/')
-  }
-
   return (
     <div className="chat-container">
       {/* 左侧边栏 - 带标签切换 */}
@@ -247,12 +234,6 @@ function Chat() {
           </Activity>
         </div>
 
-        <div className="sidebar-footer">
-          <span className="current-username">👤 {username}</span>
-          <button onClick={handleLogout} className="logout-button">
-            退出聊天
-          </button>
-        </div>
       </div>
 
       <ChatWindow
