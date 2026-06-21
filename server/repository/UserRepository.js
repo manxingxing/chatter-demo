@@ -4,33 +4,17 @@ const { users } = require('../database/schema')
 
 class UserRepository {
   /**
-   * 创建或更新用户
+   * 创建新用户（含密码）
    */
-  async createOrUpdateUser(userId, username, status = 'online') {
-    const existing = await this.findById(userId)
-
-    if (existing) {
-      // 更新
-      await db.update(users)
-        .set({
-          username,
-          status,
-          lastSeen: Date.now()
-        })
-        .where(eq(users.id, userId))
-
-      return this.findById(userId)
-    } else {
-      // 创建
-      await db.insert(users).values({
-        id: userId,
-        username,
-        status,
-        lastSeen: Date.now()
-      })
-
-      return this.findById(userId)
-    }
+  async createUser(userId, username, passwordHash, status = 'offline') {
+    await db.insert(users).values({
+      id: userId,
+      username,
+      passwordHash,
+      status,
+      lastSeen: Date.now()
+    })
+    return this.findById(userId)
   }
 
   /**

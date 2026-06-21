@@ -8,11 +8,23 @@ sqlite.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
     status TEXT DEFAULT 'offline',
     last_seen INTEGER,
     created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
   )
 `)
+
+// 迁移：为已有 users 表添加 password_hash 列（如果不存在）
+try {
+  sqlite.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`)
+  console.log('✅ 已添加 password_hash 列')
+} catch (e) {
+  // 列已存在则忽略
+  if (!e.message.includes('duplicate column')) {
+    console.log('⚠️  添加 password_hash 列:', e.message)
+  }
+}
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS conversations (

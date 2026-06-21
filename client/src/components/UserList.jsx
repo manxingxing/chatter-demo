@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { API } from '../config'
+import { API, authHeaders } from '../config'
 import '../App.css'
 
 /**
@@ -16,7 +16,7 @@ function UserList({ currentUserId, onUserClick, refreshKey }) {
     const fetchUsers = async () => {
       try {
         setLoading(true)
-        const response = await fetch(API.users)
+        const response = await fetch(API.users, { headers: authHeaders() })
         if (response.ok) {
           const data = await response.json()
           setUsers(data.users || [])

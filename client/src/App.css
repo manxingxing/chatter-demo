@@ -91,6 +91,32 @@ body {
   cursor: not-allowed;
 }
 
+.auth-link {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #616161;
+}
+
+.auth-link a {
+  color: #5b5fc7;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-link a:hover {
+  text-decoration: underline;
+}
+
+.success-message {
+  background-color: #e6f7e6;
+  color: #237b4b;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  border-left: 3px solid #237b4b;
+}
+
 /* 聊天容器 */
 .chat-container {
   display: flex;

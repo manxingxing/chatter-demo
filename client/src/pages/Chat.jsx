@@ -5,7 +5,7 @@ import UserList from '../components/UserList'
 import ConversationList from '../components/ConversationList'
 import ChatWindow from '../components/ChatWindow'
 import useMessages from '../hooks/useMessages'
-import { API, SOCKET_URL } from '../config'
+import { API, SOCKET_URL, authHeaders } from '../config'
 import '../App.css'
 
 function Chat() {
@@ -42,7 +42,7 @@ function Chat() {
   // 刷新会话列表
   const refreshConversations = async () => {
     try {
-      const response = await fetch(API.conversations(userId))
+      const response = await fetch(API.conversations(userId), { headers: authHeaders() })
       if (response.ok) {
         const data = await response.json()
         setConversations(data.conversations || [])

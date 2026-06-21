@@ -1,25 +1,51 @@
+const bcrypt = require('bcrypt')
 const userRepository = require('../repository/UserRepository')
+
+const SALT_ROUNDS = 10
 
 class UserService {
   /**
-   * 登录或注册用户
+   * 注册新用户（含密码）
    */
-  async loginOrCreate(userId, username) {
-    // 检查用户是否存在
-    let user = await userRepository.findById(userId)
-
-    if (user) {
-      // 更新用户名和状态
-      user = await userRepository.createOrUpdateUser(userId, username, 'online')
-      console.log(`✅ 用户登录: ${username} (ID: ${userId})`)
-    } else {
-      // 创建新用户
-      user = await userRepository.createOrUpdateUser(userId, username, 'online')
-      console.log(`🆕 新用户注册: ${username} (ID: ${userId})`)
+  async register(username, password) {
+    // 检查用户名是否已存在
+    const existing = await userRepository.findByUsername(username)
+    if (existing) {
+      return { success: false, message: '用户名已存在' }
     }
 
-    return user
+    // bcrypt hash 已内置 salt
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+
+    const { v4: uuidv4 } = require('uuid')
+    const userId = uuidv4()
+    const user = await userRepository.createUser(userId, username, passwordHash)
+
+    console.log(`🆕 新用户注册: ${username} (ID: ${userId})`)
+    return { success: true, user }
   }
+
+  /**
+   * 验证密码登录
+   */
+  async loginWithPassword(username, password) {
+    const user = await userRepository.findByUsername(username)
+    if (!user) {
+      return { success: false, message: '用户名或密码错误' }
+    }
+
+    if (!user.passwordHash) {
+      return { success: false, message: '该账号未设置密码，请先注册' }
+    }
+
+    const match = await bcrypt.compare(password, user.passwordHash)
+    if (!match) {
+      return { success: false, message: '用户名或密码错误' }
+    }
+
+    return { success: true, user }
+  }
+
 
   /**
    * 根据用户名查找用户

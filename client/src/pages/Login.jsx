@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { API } from '../config'
 import '../App.css'
 
 function Login() {
   const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
   const handleLogin = async (e) => {
     e.preventDefault()
-    if (!username.trim()) return
+    if (!username.trim() || !password) return
 
     setLoading(true)
     setError('')
@@ -23,7 +24,7 @@ function Login() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ username: username.trim() })
+        body: JSON.stringify({ username: username.trim(), password })
       })
 
       const data = await response.json()
@@ -32,15 +33,15 @@ function Login() {
         throw new Error(data.message || '登录失败')
       }
 
-      // 从响应中获取用户信息
-      const { user } = data
+      // 从响应中获取用户信息和 token
+      const { user, token } = data
 
-      // 将 userId 和用户名存储到 localStorage
+      // 存储到 localStorage
+      localStorage.setItem('token', token)
       localStorage.setItem('userId', user.id)
       localStorage.setItem('username', user.username)
 
       console.log('✅ 登录成功:', user)
-      console.log('✅ userId 已存储到 localStorage:', user.id)
 
       // 跳转到聊天页面
       navigate('/chat')
@@ -68,10 +69,20 @@ function Login() {
             autoFocus
             disabled={loading}
           />
-          <button type="submit" disabled={!username.trim() || loading}>
-            {loading ? '登录中...' : '加入聊天'}
+          <input
+            type="password"
+            placeholder="请输入密码"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
+          />
+          <button type="submit" disabled={!username.trim() || !password || loading}>
+            {loading ? '登录中...' : '登录'}
           </button>
         </form>
+        <p className="auth-link">
+          还没有账号？<Link to="/register">立即注册</Link>
+        </p>
       </div>
     </div>
   )

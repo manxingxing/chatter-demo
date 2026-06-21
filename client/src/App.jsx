@@ -1,7 +1,8 @@
 import { createBrowserRouter, RouterProvider, Navigate, useNavigate } from 'react-router-dom'
 import Login from './pages/Login'
+import Register from './pages/Register'
 import Chat from './pages/Chat'
-import { API } from './config'
+import { API, authHeaders } from './config'
 
 // Loader: 在进入 chat 路由前验证用户身份并预加载数据
 const chatLoader = async () => {
@@ -13,7 +14,7 @@ const chatLoader = async () => {
   }
 
   // 预加载会话列表
-  const conversationsRes = await fetch(API.conversations(userId))
+  const conversationsRes = await fetch(API.conversations(userId), { headers: authHeaders() })
   const conversationsData = conversationsRes.ok ? await conversationsRes.json() : { conversations: [] }
 
   return {
@@ -47,6 +48,10 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <Login />
+  },
+  {
+    path: '/register',
+    element: <Register />
   },
   {
     path: '/chat',

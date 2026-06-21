@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { API } from '../config'
+import { API, authHeaders } from '../config'
 
 // -------------------- 常量 & 工具 --------------------
 
@@ -87,7 +87,7 @@ export default function useMessages(userId, activeConversationId) {
           ? API.messagesSince(activeConversationId, lastCachedMsg.id)
           : API.messages(activeConversationId)
 
-        const response = await fetch(url)
+        const response = await fetch(url, { headers: authHeaders() })
         if (!response.ok) return
         const data = await response.json()
         const incoming = data.messages || []

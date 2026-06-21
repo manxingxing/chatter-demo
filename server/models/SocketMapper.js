@@ -21,7 +21,7 @@ class SocketUserMapper {
     this.userToSocket.set(userId, socketId)
 
     // 创建或更新用户(自动设置为在线)
-    await userService.loginOrCreate(userId, username)
+    await userService.setOnline(userId)
 
     console.log(`✅ Socket ${socketId.substring(0, 8)}... 绑定到用户 ${username}(${userId})`)
   }
