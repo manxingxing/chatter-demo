@@ -8,37 +8,7 @@ import '../App.css'
  * @param {Function} onUserClick - 用户点击回调函数 (userId, username) => void
  * @param {number} refreshKey - 递增此值触发重新拉取用户列表
  */
-function UserList({ currentUserId, onUserClick, refreshKey }) {
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        setLoading(true)
-        const response = await fetch(API.users, { headers: authHeaders() })
-        if (response.ok) {
-          const data = await response.json()
-          setUsers(data.users || [])
-        }
-      } catch (err) {
-        console.error('获取用户列表失败:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchUsers()
-  }, [refreshKey])
-
-  if (loading) {
-    return (
-      <div className="empty-list">
-        <p>加载中...</p>
-      </div>
-    )
-  }
-
+function UserList({ users, currentUserId, onUserClick }) {
   if (!users || users.length === 0) {
     return (
       <div className="empty-list">

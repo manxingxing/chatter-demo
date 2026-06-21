@@ -43,7 +43,7 @@ function Chat() {
   // 刷新会话列表
   const refreshConversations = async () => {
     try {
-      const response = await fetch(API.conversations(), { headers: authHeaders() })
+      const response = await fetch(API.conversations, { headers: authHeaders() })
       if (response.ok) {
         const data = await response.json()
         setConversations(data.conversations || [])
@@ -59,6 +59,14 @@ function Chat() {
     conversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const setUserStatus = ({userId, status}) => {
+    setUsers((prev) =>
+      prev.map((user) =>
+        user.id === userId ? { ...user, status } : user
+      )
+    )
+  }
+
   // 连接 Socket.IO
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -67,12 +75,16 @@ function Chat() {
 
     newSocket.on('connect', () => {
       console.log('✅ 已连接到服务器（已通过 JWT 鉴权）')
+      setUserStatus({userId, status: 'online'})
     })
 
     newSocket.on('connect_error', (err) => {
       console.error('Socket 鉴权失败:', err.message)
       toast.error('WebSocket 连接失败')
     })
+
+    // 用户上线/下线 → 刷新用户列表
+    newSocket.on('user_status_changed', setUserStatus)
 
     // 用户正在输入（仅当前会话，附带输入内容预览）
     newSocket.on('user_typing', (data) => {
@@ -140,10 +152,6 @@ function Chat() {
       }))
     })
 
-    // 用户上线/下线 → 刷新用户列表
-    newSocket.on('user_status_changed', () => {
-      setUserRefreshKey(k => k + 1)
-    })
 
     // 断开连接
     newSocket.on('disconnect', () => {
@@ -227,9 +235,9 @@ function Chat() {
           {/* 通讯录 - 在线用户列表 */}
           <Activity mode={activeTab === 'contacts' ? 'visible' : 'hidden'}>
             <UserList
+              users={users}
               currentUserId={userId}
               onUserClick={handleUserClick}
-              refreshKey={userRefreshKey}
             />
           </Activity>
         </div>
