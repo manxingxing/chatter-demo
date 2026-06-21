@@ -12,7 +12,8 @@ class UserRepository {
       username,
       passwordHash,
       status,
-      lastSeen: Date.now()
+      lastSeen: Date.now(),
+      createdAt: Date.now()
     })
     return this.findById(userId)
   }

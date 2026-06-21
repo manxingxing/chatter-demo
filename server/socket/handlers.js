@@ -3,8 +3,7 @@ const socketMapper = require('../models/SocketMapper')
 const conversationService = require('../service/ConversationService')
 const userService = require('../service/UserService')
 const { v4: uuidv4 } = require('uuid');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'chatter-secret-key-change-in-production'
+const { JWT_SECRET } = require('../middleware/auth')
 
 // 会话参与者缓存 —— 避免 typing 等高频事件反复查 DB
 const participantsCache = new Map()
@@ -140,51 +139,51 @@ function setupSocketHandlers(io) {
     })
 
     // 发送消息
-    socket.on('send_message', async ({ conversationId, content, senderId }) => {
-      const currentUser = await socketMapper.getUserBySocket(socket.id)
+    socket.on('send_message', async ({ conversationId, content }) => {
+      try {
+        const currentUser = await socketMapper.getUserBySocket(socket.id)
 
-      if (!currentUser) {
-        socket.emit('error', { message: '未登录' })
-        return
-      }
-
-      if (senderId && currentUser.id !== senderId) {
-        socket.emit('error', { message: '无权发送此消息' })
-        return
-      }
-
-      const conversation = await conversationService.getConversationWithParticipants(conversationId)
-
-      if (!conversation) {
-        socket.emit('error', { message: '会话不存在' })
-        return
-      }
-
-      // 验证用户是否在会话中
-      if (!conversation.participants.includes(currentUser.id)) {
-        socket.emit('error', { message: '无权访问此会话' })
-        return
-      }
-
-      // 创建消息
-      // 保存消息到数据库
-      const message = await conversationService.saveMessage(
-        uuidv4(),
-        conversationId,
-        currentUser.id,
-        content
-      )
-
-      // 发送给会话中的所有参与者（通过他们的个人房间）
-      conversation.participants.forEach(participantId => {
-        // 不发送给发送者自己（可选，前端可以决定是否显示）
-        if (participantId !== currentUser.id) {
-          io.to(`user_${participantId}`).emit('chat_message', message)
+        if (!currentUser) {
+          socket.emit('error', { message: '未登录' })
+          return
         }
-      })
 
-      // 也发送给发送者（用于确认和多端同步）
-      socket.emit('chat_message', message)
+        const conversation = await conversationService.getConversationWithParticipants(conversationId)
+
+        if (!conversation) {
+          socket.emit('error', { message: '会话不存在' })
+          return
+        }
+
+        // 验证用户是否在会话中
+        if (!conversation.participants.includes(currentUser.id)) {
+          socket.emit('error', { message: '无权访问此会话' })
+          return
+        }
+
+        // 创建消息
+        // 保存消息到数据库
+        const message = await conversationService.saveMessage(
+          uuidv4(),
+          conversationId,
+          currentUser.id,
+          content
+        )
+
+        // 发送给会话中的所有参与者（通过他们的个人房间）
+        conversation.participants.forEach(participantId => {
+          // 不发送给发送者自己（可选，前端可以决定是否显示）
+          if (participantId !== currentUser.id) {
+            io.to(`user_${participantId}`).emit('chat_message', message)
+          }
+        })
+
+        // 也发送给发送者（用于确认和多端同步）
+        socket.emit('chat_message', message)
+      } catch (err) {
+        console.error('send_message 处理失败:', err)
+        socket.emit('error', { message: '消息发送失败' })
+      }
     })
   })
 }
