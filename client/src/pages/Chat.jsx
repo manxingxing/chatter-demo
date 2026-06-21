@@ -23,7 +23,7 @@ function Chat() {
   console.log('  - userId:', userId)
 
   const toast = useToast()
-  const [socket, setSocket] = useState(null)
+  const socketRef = useRef(null)
   const [activeTab, setActiveTab] = useState('conversations')  // 当前激活的标签: 'conversations' | 'contacts'
 
   const [conversations, setConversations] = useState(initialConversations)  // 会话列表
@@ -36,10 +36,10 @@ function Chat() {
   const removeTypingUser = useChatStore((s) => s.removeTypingUser)
 
   // 消息缓存（由 useMessages hook 管理）
-  const { messagesMap, refreshMessages, addMessage } = useMessages(userId)
+  const { messagesMap, refreshMessages, addMessage } = useMessages()
   const currentMessages = messagesMap[activeConversationId] || []
   // 未读计数（由 useUnreadCount hook 管理）
-  const { unreadCounts, updateUnreadCount } = useUnreadCount(userId)
+  const { unreadCounts, updateUnreadCount } = useUnreadCount()
 
   // 刷新会话列表
   const refreshConversations = async () => {
@@ -54,11 +54,15 @@ function Chat() {
     }
   }
 
-  // 用 ref 实时追踪当前的会话 ID（供 socket 回调读取最新值）
-  const conversationIdRef = useRef(activeConversationId);
+  // 用 ref 实时追踪当前的会话 ID 和会话列表（供 socket 回调读取最新值）
+  const conversationIdRef = useRef(activeConversationId)
+  const conversationsRef = useRef(conversations)
   useEffect(() => {
-    conversationIdRef.current = activeConversationId;
-  }, [activeConversationId]);
+    conversationIdRef.current = activeConversationId
+  }, [activeConversationId])
+  useEffect(() => {
+    conversationsRef.current = conversations
+  }, [conversations])
 
   const activateConversation = useEffectEvent(async (conversationId) => {
     await refreshMessages(conversationId)
@@ -84,7 +88,7 @@ function Chat() {
   useEffect(() => {
     const token = localStorage.getItem('token')
     const newSocket = io(SOCKET_URL, { auth: { token } })
-    setSocket(newSocket)
+    socketRef.current = newSocket
 
     newSocket.on('connect', () => {
       console.log('✅ 已连接到服务器（已通过 JWT 鉴权）')
@@ -149,7 +153,7 @@ function Chat() {
       }
 
       // 如果会话不存在，则刷新会话列表
-      if (!conversations.some(c => c.id === convId)) {
+      if (!conversationsRef.current.some(c => c.id === convId)) {
         refreshConversations()
       }
     })
@@ -168,38 +172,37 @@ function Chat() {
     return () => {
       newSocket.disconnect()
     }
-  }, [userId])
-  // 'addMessage', 'conversations', 'removeTypingUser', 'setTypingUser', 'toast', and 'updateUnreadCount'
+  }, [userId, addMessage, setTypingUser, removeTypingUser, updateUnreadCount, toast])
 
   // 发送消息
   const sendMessage = (message) => {
-    if (!message || !message.content || !socket || !activeConversationId) return
+    if (!message || !message.content || !socketRef.current || !activeConversationId) return
 
-    socket.emit('send_message', message)
-    socket.emit('stop_typing', { conversationId: activeConversationId, userId })
+    socketRef.current.emit('send_message', message)
+    socketRef.current.emit('stop_typing', { conversationId: activeConversationId, userId })
   }
 
   // 通知正在输入（附带当前输入内容，供对方预览）
   const handleTyping = (content) => {
-    if (!socket || !activeConversationId) return
+    if (!socketRef.current || !activeConversationId) return
 
-    socket.emit('typing', { conversationId: activeConversationId, userId, content })
+    socketRef.current.emit('typing', { conversationId: activeConversationId, userId, content })
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current)
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('stop_typing', { conversationId: activeConversationId, userId })
+      socketRef.current.emit('stop_typing', { conversationId: activeConversationId, userId })
     }, 1000)
   }
 
   // 点击用户,打开或切换到该用户的会话
   const handleUserClick = (targetUserId) => {
-    if (!socket || targetUserId === userId) return
+    if (!socketRef.current || targetUserId === userId) return
 
     // 请求创建或获取会话
-    socket.emit('request_conversation', { targetUserId })
+    socketRef.current.emit('request_conversation', { targetUserId })
   }
 
   return (

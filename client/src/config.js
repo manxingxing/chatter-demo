@@ -6,7 +6,7 @@ export const API = {
   login:        `${API_BASE}/api/login`,
   register:     `${API_BASE}/api/register`,
   conversations: `${API_BASE}/api/conversations`,
-  messages:      (convId) => `${API_BASE}/api/conversations/${convId}/messages?limit=50`,
+  messages:      (convId) => `${API_BASE}/api/conversations/${convId}/messages?limit=100`,
   messagesSince: (convId, msgId) => `${API_BASE}/api/conversations/${convId}/messages/since/${msgId}`,
 }
 
