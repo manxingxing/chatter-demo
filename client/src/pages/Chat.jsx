@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, Activity } from 'react'
+import { useState, useEffect, useRef, Activity, useEffectEvent } from 'react'
 import { useLoaderData } from 'react-router-dom'
 import io from 'socket.io-client'
 import UserList from '../components/UserList'
 import ConversationList from '../components/ConversationList'
-import ChatWindow from '../components/ChatWindow'
+import Messages from '../components/Messages'
+import MessageInputer from '../components/MessageInputer'
+import { useChatStore } from '../stores/chatStore'
 import { useUser } from '../contexts/UserContext'
 import { useToast } from '../contexts/ToastContext'
 import { useMessages, useUnreadCount} from '../hooks/useMessages'
@@ -15,30 +17,29 @@ function Chat() {
   const { userId, username } = useUser()
   // 从本路由 chatLoader 获取会话列表
   const { conversations: initialConversations, users: initialUsers } = useLoaderData()
-  const toast = useToast()
 
   console.log('Chat 页面加载:')
   console.log('  - username:', username)
   console.log('  - userId:', userId)
 
+  const toast = useToast()
   const [socket, setSocket] = useState(null)
   const [activeTab, setActiveTab] = useState('conversations')  // 当前激活的标签: 'conversations' | 'contacts'
 
   const [conversations, setConversations] = useState(initialConversations)  // 会话列表
   const [activeConversationId, setActiveConversationId] = useState(null)  // 当前激活的会话
 
-  const [typingUsers, setTypingUsers] = useState(new Map())  // Map<username, content>
-  const typingTimeoutRef = useRef(null)
-
   const [users, setUsers] = useState(initialUsers)
 
-  // 消息缓存 & 未读计数（由 useMessages hook 管理）
-  const { messagesMap, refreshMessages, addMessage } = useMessages(userId, activeConversationId)
+  const typingTimeoutRef = useRef(null)
+  const setTypingUser = useChatStore((s) => s.setTypingUser)
+  const removeTypingUser = useChatStore((s) => s.removeTypingUser)
+
+  // 消息缓存（由 useMessages hook 管理）
+  const { messagesMap, refreshMessages, addMessage } = useMessages(userId)
   const currentMessages = messagesMap[activeConversationId] || []
-
+  // 未读计数（由 useUnreadCount hook 管理）
   const { unreadCounts, updateUnreadCount } = useUnreadCount(userId)
-
-  console.log(unreadCounts)
 
   // 刷新会话列表
   const refreshConversations = async () => {
@@ -59,21 +60,25 @@ function Chat() {
     conversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const activateConversation = useEffectEvent(async (conversationId) => {
+    await refreshMessages(conversationId)
+    updateUnreadCount(conversationId, 0)
+  })
+
   // 切换会话时，重新拉取会话列表，清零未读数量
   useEffect(() => {
     if (activeConversationId) {
-      refreshMessages(activeConversationId)
-      updateUnreadCount(activeConversationId, 0)
+      activateConversation(activeConversationId)
     }
   }, [activeConversationId]);
 
-  const setUserStatus = ({userId, status}) => {
+  const setUserStatus = useEffectEvent(({userId, status}) => {
     setUsers((prev) =>
       prev.map((user) =>
         user.id === userId ? { ...user, status } : user
       )
     )
-  }
+  });
 
   // 连接 Socket.IO
   useEffect(() => {
@@ -94,24 +99,26 @@ function Chat() {
     // 用户上线/下线 → 刷新用户列表
     newSocket.on('user_status_changed', setUserStatus)
 
+    // 断开连接
+    newSocket.on('disconnect', () => {
+      console.log('与服务器断开连接')
+      setUserStatus({userId, status: 'offline'})
+    })
+
     // 用户正在输入（仅当前会话，附带输入内容预览）
     newSocket.on('user_typing', (data) => {
       if (data.conversationId !== conversationIdRef.current) return
-      setTypingUsers((prev) => new Map(prev).set(data.username, data.content || ''))
+      setTypingUser(data.username, data.content)
     })
 
     // 用户停止输入
     newSocket.on('user_stop_typing', (data) => {
       if (data.conversationId !== conversationIdRef.current) return
-      setTypingUsers((prev) => {
-        const next = new Map(prev)
-        next.delete(data.username)
-        return next
-      })
+      removeTypingUser(data.username)
     })
 
     // 会话打开
-    newSocket.on('conversation_opened', async ({ conversation }) => {
+    newSocket.on('conversation_opened', ({ conversation }) => {
       console.log('✅ 会话已打开:', conversation.id)
 
       setConversations(prev =>
@@ -135,7 +142,10 @@ function Chat() {
       // 非活跃会话：递增未读计数
       if (!isActive) {
         updateUnreadCount(convId, (prev) => prev+1)
-        try { new Notification('New Message', { body: message.content }) } catch {}
+        try { new Notification('New Message', { body: message.content }) }
+        catch {
+          console.error('Failed to show notification')
+        }
       }
 
       // 如果会话不存在，则刷新会话列表
@@ -154,17 +164,12 @@ function Chat() {
     })
 
 
-    // 断开连接
-    newSocket.on('disconnect', () => {
-      console.log('与服务器断开连接')
-      setUserStatus({userId, status: 'offline'})
-    })
-
     // 清理函数
     return () => {
       newSocket.disconnect()
     }
   }, [userId])
+  // 'addMessage', 'conversations', 'removeTypingUser', 'setTypingUser', 'toast', and 'updateUnreadCount'
 
   // 发送消息
   const sendMessage = (message) => {
@@ -190,17 +195,11 @@ function Chat() {
   }
 
   // 点击用户,打开或切换到该用户的会话
-  const handleUserClick = async (targetUserId, targetUsername) => {
+  const handleUserClick = (targetUserId) => {
     if (!socket || targetUserId === userId) return
-
-    console.log(`👆 点击用户: ${targetUsername} (${targetUserId})`)
 
     // 请求创建或获取会话
     socket.emit('request_conversation', { targetUserId })
-  }
-
-  const activateConversation = (conversationId) => {
-    setActiveConversationId(conversationId)
   }
 
   return (
@@ -230,7 +229,7 @@ function Chat() {
               conversations={conversations}
               activeConversationId={activeConversationId}
               unreadCounts={unreadCounts}
-              onSelect={(conversationId) => activateConversation(conversationId)}
+              onSelect={(conversationId) => setActiveConversationId(conversationId)}
             />
           </Activity>
 
@@ -243,17 +242,25 @@ function Chat() {
             />
           </Activity>
         </div>
-
       </div>
 
-      <ChatWindow
-        activeConversationId={activeConversationId}
-        messages={currentMessages}
-        userId={userId}
-        typingUsers={typingUsers}
-        onSend={sendMessage}
-        onInputChange={handleTyping}
-      />
+      <div className="chat-main">
+        <Messages
+          userId={userId}
+          activeConversationId={activeConversationId}
+          messages={currentMessages}
+        />
+
+        {activeConversationId && (
+          <MessageInputer
+            key={activeConversationId}
+            activeConversationId={activeConversationId}
+            userId={userId}
+            onSend={sendMessage}
+            onInputChange={handleTyping}
+          />
+        )}
+      </div>
     </div>
   )
 }

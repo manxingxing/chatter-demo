@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { API, authHeaders } from '../config'
 
 // -------------------- 常量 & 工具 --------------------
@@ -47,6 +47,12 @@ export function useMessages(userId) {
     catch { return {} }
   })
 
+  // ref 保持最新值，供 useCallback 内读取，避免闭包过期
+  const messagesMapRef = useRef(messagesMap)
+  useEffect(()=>{
+    messagesMapRef.current = messagesMap
+  }, [messagesMap])
+
   // ---------- localStorage 持久化 ----------
 
   useEffect(() => {
@@ -55,10 +61,10 @@ export function useMessages(userId) {
   }, [messagesMap, userId])
 
   // ---------- 进入会话：增量拉取消息 ----------
-  const refreshMessages = async (conversationId) => {
+  const refreshMessages = useCallback(async (conversationId) => {
     try {
-      // 读取当前缓存，决定走增量还是全量
-      const cached = messagesMap[conversationId] || []
+      // 读取当前缓存（通过 ref 获取最新值），决定走增量还是全量
+      const cached = messagesMapRef.current[conversationId] || []
       const lastCachedMsg = cached.length > 0 ? cached[cached.length - 1] : null
 
       const url = lastCachedMsg
@@ -91,7 +97,7 @@ export function useMessages(userId) {
     } catch (error) {
       console.error('❌ 加载消息失败:', error)
     }
-  }
+  }, [])
 
   const addMessage = (conversationId, message) => {
     setMessagesMap(prev => ({
@@ -125,7 +131,7 @@ export function useUnreadCount(userId) {
     catch { return {} }
   })
 
-  const updateUnreadCount = (conversationId, count) => {
+  const updateUnreadCount = useCallback((conversationId, count) => {
     setUnreadCounts(prev => {
       if (typeof count === 'function') {
         const prevCount = Math.max(prev[conversationId] || 0, 0)
@@ -140,7 +146,7 @@ export function useUnreadCount(userId) {
         }
       }
     })
-  }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(UNREAD_CACHE_KEY(userId), JSON.stringify(unreadCounts))
