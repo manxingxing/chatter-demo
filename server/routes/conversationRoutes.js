@@ -7,7 +7,7 @@ const router = Router();
 // GET /api/conversations — 获取用户的会话列表
 router.get('/', async (req, res) => {
   try {
-    const { userId } = req.query;
+    const userId  = req.userId;
 
     if (!userId) {
       return res.status(400).json({

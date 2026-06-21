@@ -4,7 +4,7 @@ export const API = {
   users:        `${API_BASE}/api/users`,
   login:        `${API_BASE}/api/login`,
   register:     `${API_BASE}/api/register`,
-  conversations: (userId) => `${API_BASE}/api/conversations?userId=${userId}`,
+  conversations: () => `${API_BASE}/api/conversations`,
   messages:      (convId) => `${API_BASE}/api/conversations/${convId}/messages?limit=50`,
   messagesSince: (convId, msgId) => `${API_BASE}/api/conversations/${convId}/messages/since/${msgId}`,
 }
