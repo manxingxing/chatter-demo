@@ -84,14 +84,8 @@ function setupSocketHandlers(io) {
       // 预热参与者缓存（后续 typing 事件直接命中，0 次 DB 查询）
       participantsCache.set(conversation.id, conversation.participants)
 
-      // 加载历史消息
-      const messages = await conversationService.getMessageHistory(conversation.id, 50)
-
       // 返回会话信息
-      socket.emit('conversation_opened', {
-        conversation,
-        messages
-      })
+      socket.emit('conversation_opened', { conversation })
     })
 
     // 正在输入

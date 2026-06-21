@@ -39,18 +39,11 @@ const trimMessagesMap = (map) => {
 /**
  * 管理每个会话的消息缓存 & 未读计数
  * @param {string} userId
- * @param {string|null} activeConversationId
  */
-export default function useMessages(userId, activeConversationId) {
+export function useMessages(userId) {
   // 每个会话的消息列表: { [convId]: Message[] }
   const [messagesMap, setMessagesMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem(MSG_CACHE_KEY(userId)) || '{}') }
-    catch { return {} }
-  })
-
-  // 未读计数: { [convId]: number }
-  const [unreadCounts, setUnreadCounts] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(UNREAD_CACHE_KEY(userId)) || '{}') }
     catch { return {} }
   })
 
@@ -61,71 +54,97 @@ export default function useMessages(userId, activeConversationId) {
     localStorage.setItem(MSG_CACHE_KEY(userId), JSON.stringify(trimmed))
   }, [messagesMap, userId])
 
+  // ---------- 进入会话：增量拉取消息 ----------
+  const refreshMessages = async (conversationId) => {
+    try {
+      // 读取当前缓存，决定走增量还是全量
+      const cached = messagesMap[conversationId] || []
+      const lastCachedMsg = cached.length > 0 ? cached[cached.length - 1] : null
+
+      const url = lastCachedMsg
+        ? API.messagesSince(conversationId, lastCachedMsg.id)
+        : API.messages(conversationId)
+
+      const response = await fetch(url, { headers: authHeaders() })
+      if (!response.ok) {
+        return
+      }
+      const data = await response.json()
+      const incoming = data.messages || []
+
+      setMessagesMap(prev => {
+        const prevCached = prev[conversationId] || []
+
+        if (lastCachedMsg) {
+          // 增量：直接追加
+          return { ...prev, [conversationId]: [...prevCached, ...incoming] }
+        }
+
+        // 全量：去重 + 按时间排序
+        const serverIds = new Set(incoming.map(m => m.id))
+        const merged = [
+          ...prevCached.filter(m => !serverIds.has(m.id)),
+          ...incoming
+        ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+        return { ...prev, [conversationId]: merged }
+      })
+    } catch (error) {
+      console.error('❌ 加载消息失败:', error)
+    }
+  }
+
+  const addMessage = (conversationId, message) => {
+    setMessagesMap(prev => ({
+      ...prev,
+      [conversationId]: [...(prev[conversationId] || []), message]
+    }))
+  }
+
+  // // ---------- 派生当前会话消息 ----------
+
+  // const currentMessages = useMemo(() =>
+  //   activeConversationId ? messagesMap[activeConversationId] || [] : [],
+  //   [messagesMap, activeConversationId]
+  // )
+
+  return {
+    messagesMap,
+    refreshMessages,
+    addMessage
+  }
+}
+
+/**
+ * 管理每个会话的未读计数
+ * @param {string} userId
+ * @returns
+ */
+export function useUnreadCount(userId) {
+  const [unreadCounts, setUnreadCounts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(UNREAD_CACHE_KEY(userId)) || '{}') }
+    catch { return {} }
+  })
+
+  const updateUnreadCount = (conversationId, count) => {
+    setUnreadCounts(prev => {
+      if (typeof count === 'function') {
+        const prevCount = Math.max(prev[conversationId] || 0, 0)
+        return {
+          ...prev,
+          [conversationId]: count(prevCount)
+        }
+      } else {
+        return {
+          ...prev,
+          [conversationId]: count
+        }
+      }
+    })
+  }
+
   useEffect(() => {
     localStorage.setItem(UNREAD_CACHE_KEY(userId), JSON.stringify(unreadCounts))
   }, [unreadCounts, userId])
 
-  // ---------- 进入会话：清除未读 + 增量拉取消息 ----------
-
-  useEffect(() => {
-    if (!activeConversationId) return
-
-    // 清除当前会话的未读计数
-    setUnreadCounts(prev =>
-      (prev[activeConversationId] || 0) > 0
-        ? { ...prev, [activeConversationId]: 0 }
-        : prev
-    )
-
-    const fetchAndMerge = async () => {
-      try {
-        // 读取当前缓存，决定走增量还是全量
-        const cached = messagesMap[activeConversationId] || []
-        const lastCachedMsg = cached.length > 0 ? cached[cached.length - 1] : null
-
-        const url = lastCachedMsg
-          ? API.messagesSince(activeConversationId, lastCachedMsg.id)
-          : API.messages(activeConversationId)
-
-        const response = await fetch(url, { headers: authHeaders() })
-        if (!response.ok) return
-        const data = await response.json()
-        const incoming = data.messages || []
-
-        setMessagesMap(prev => {
-          const prevCached = prev[activeConversationId] || []
-          if (lastCachedMsg) {
-            // 增量：直接追加
-            return { ...prev, [activeConversationId]: [...prevCached, ...incoming] }
-          }
-          // 全量：去重 + 按时间排序
-          const serverIds = new Set(incoming.map(m => m.id))
-          const merged = [
-            ...prevCached.filter(m => !serverIds.has(m.id)),
-            ...incoming
-          ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-          return { ...prev, [activeConversationId]: merged }
-        })
-      } catch (error) {
-        console.error('❌ 加载消息失败:', error)
-      }
-    }
-
-    fetchAndMerge()
-  }, [activeConversationId])
-
-  // ---------- 派生当前会话消息 ----------
-
-  const currentMessages = useMemo(() =>
-    activeConversationId ? messagesMap[activeConversationId] || [] : [],
-    [messagesMap, activeConversationId]
-  )
-
-  return {
-    messagesMap,
-    setMessagesMap,
-    unreadCounts,
-    setUnreadCounts,
-    currentMessages,
-  }
+  return {unreadCounts, updateUnreadCount}
 }

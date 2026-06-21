@@ -6,16 +6,16 @@ import ConversationList from '../components/ConversationList'
 import ChatWindow from '../components/ChatWindow'
 import { useUser } from '../contexts/UserContext'
 import { useToast } from '../contexts/ToastContext'
-import useMessages from '../hooks/useMessages'
+import { useMessages, useUnreadCount} from '../hooks/useMessages'
 import { API, SOCKET_URL, authHeaders } from '../config'
 import '../App.css'
 
 function Chat() {
   // 从 UserContext 获取用户信息
   const { userId, username } = useUser()
-  const toast = useToast()
   // 从本路由 chatLoader 获取会话列表
   const { conversations: initialConversations, users: initialUsers } = useLoaderData()
+  const toast = useToast()
 
   console.log('Chat 页面加载:')
   console.log('  - username:', username)
@@ -31,14 +31,14 @@ function Chat() {
   const typingTimeoutRef = useRef(null)
 
   const [users, setUsers] = useState(initialUsers)
-  const [userRefreshKey, setUserRefreshKey] = useState(0)  // 递增触发 UserList 重新拉取
 
   // 消息缓存 & 未读计数（由 useMessages hook 管理）
-  const {
-    messagesMap, setMessagesMap,
-    unreadCounts, setUnreadCounts,
-    currentMessages,
-  } = useMessages(userId, activeConversationId)
+  const { messagesMap, refreshMessages, addMessage } = useMessages(userId, activeConversationId)
+  const currentMessages = messagesMap[activeConversationId] || []
+
+  const { unreadCounts, updateUnreadCount } = useUnreadCount(userId)
+
+  console.log(unreadCounts)
 
   // 刷新会话列表
   const refreshConversations = async () => {
@@ -57,6 +57,14 @@ function Chat() {
   const conversationIdRef = useRef(activeConversationId);
   useEffect(() => {
     conversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  // 切换会话时，重新拉取会话列表，清零未读数量
+  useEffect(() => {
+    if (activeConversationId) {
+      refreshMessages(activeConversationId)
+      updateUnreadCount(activeConversationId, 0)
+    }
   }, [activeConversationId]);
 
   const setUserStatus = ({userId, status}) => {
@@ -122,40 +130,34 @@ function Chat() {
       const isActive = convId === conversationIdRef.current
 
       // 追加到 messagesMap
-      setMessagesMap(prev => ({
-        ...prev,
-        [convId]: [...(prev[convId] || []), message]
-      }))
+      addMessage(convId, message)
 
       // 非活跃会话：递增未读计数
       if (!isActive) {
-        setUnreadCounts(prev => ({
-          ...prev,
-          [convId]: (prev[convId] || 0) + 1
-        }))
+        updateUnreadCount(convId, (prev) => prev+1)
         try { new Notification('New Message', { body: message.content }) } catch {}
       }
 
-      refreshConversations()
+      // 如果会话不存在，则刷新会话列表
+      if (!conversations.some(c => c.id === convId)) {
+        refreshConversations()
+      }
     })
 
     // 接收系统消息
-    newSocket.on('system_message', (data) => {
-      const convId = data.conversationId || activeConversationId
-      setMessagesMap(prev => ({
-        ...prev,
-        [convId]: [...(prev[convId] || []), {
-          id: Date.now(),
-          category: 'system',
-          ...data
-        }]
-      }))
+    newSocket.on('system_message', (message) => {
+      console.log('📨 收到新消息:', message)
+      const convId = message.conversationId
+
+      // 追加到 messagesMap
+      addMessage(convId, message)
     })
 
 
     // 断开连接
     newSocket.on('disconnect', () => {
       console.log('与服务器断开连接')
+      setUserStatus({userId, status: 'offline'})
     })
 
     // 清理函数

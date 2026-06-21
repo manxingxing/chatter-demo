@@ -39,7 +39,6 @@ class ConversationService {
     // 构建显示名称
     let displayName
     if (conversation.type === 'one-on-one') {
-      const otherUser = participants.find(p => p.id !== userId1 && p.id !== userId2)
       // 对于请求者来说，对方是 targetUserId
       const otherUserId = participants.find(p => p.id !== userId1)?.id || userId2
       const otherUserObj = participants.find(p => p.id === otherUserId)
