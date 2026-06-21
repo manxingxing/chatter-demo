@@ -1,28 +1,10 @@
-import { createBrowserRouter, Navigate, useNavigate } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Chat from './pages/Chat'
 import AppLayout from './components/AppLayout'
 import { userLoader, chatLoader } from './loaders'
-
-// ─── 错误边界组件 ───
-export function ErrorBoundary({ error }) {
-  const navigate = useNavigate()
-
-  if (error?.status === 401) {
-    localStorage.clear()
-    navigate('/', { replace: true })
-    return null
-  }
-
-  return (
-    <div style={{ padding: '2rem', textAlign: 'center' }}>
-      <h2>出错了</h2>
-      <p>{error?.message || '加载失败'}</p>
-      <button onClick={() => window.location.reload()}>重试</button>
-    </div>
-  )
-}
+import ErrorBoundary from './components/ErrorBoundary'
 
 // ─── 路由配置 ───
 export const routes = createBrowserRouter([

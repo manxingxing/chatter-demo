@@ -1,12 +1,9 @@
-import { useState, useEffect } from 'react'
-import { API, authHeaders } from '../config'
 import '../App.css'
 
 /**
  * 用户列表组件 — 自行拉取用户数据，保证在线状态准确
  * @param {string} currentUserId - 当前用户ID
  * @param {Function} onUserClick - 用户点击回调函数 (userId, username) => void
- * @param {number} refreshKey - 递增此值触发重新拉取用户列表
  */
 function UserList({ users, currentUserId, onUserClick }) {
   if (!users || users.length === 0) {

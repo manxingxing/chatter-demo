@@ -38,7 +38,7 @@ function ChatWindow({
     setInputMessage('')
   }, [activeConversationId])
 
-  // 处理输入变化（throttle 500ms，避免每个字符都触发 typing 事件）
+  // 处理输入变化（throttle 100ms，避免每个字符都触发 typing 事件）
   const handleChange = (e) => {
     setInputMessage(e.target.value)
     const now = Date.now()

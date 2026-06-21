@@ -34,7 +34,6 @@ function ConversationList({ conversations, activeConversationId, unreadCounts, o
             {conv.displayName}
           </span>
 
-          { conv.unRead && <span style={{ color:  '#d63722ff'}} className="unread">●</span>}
           { (unreadCounts[conv.id] || 0) > 0 && (
             <span className="unread-badge">{unreadCounts[conv.id]}</span>
           )}
