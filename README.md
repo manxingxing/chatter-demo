@@ -2,6 +2,8 @@
 
 一个基于 WebSocket 的实时聊天应用 Demo，支持一对一私聊、实时消息推送、在线状态与正在输入提示等功能。
 
+![screenshot](snapshot.png)
+
 ---
 
 ## 技术栈
